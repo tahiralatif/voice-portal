@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Models (large files — download separately)
+models/
+whisper-model/
+piper-models/
+
+# Database
+*.db
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
