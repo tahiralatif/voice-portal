@@ -717,24 +717,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     })
                     continue
 
-                # Step 2: LLM (only when engine=hf)
-                llm_latency = 0
-                reply_text = transcript  # default: echo transcript
-                if engine == "hf":
-                    await manager.send(session_id, {"type": "status", "stage": "transcribing", "message": "Thinking..."})
-                    try:
-                        llm_result = await generate_reply(transcript, language)
-                        reply_text = llm_result.get("reply", transcript)
-                        llm_latency = llm_result.get("latency_ms", 0)
-                        print(f"[WS] LLM ({llm_result.get('note', 'unknown')}): '{reply_text[:80]}' in {llm_latency:.0f}ms")
-                    except Exception as e:
-                        print(f"[WS] LLM failed: {e}, echoing transcript")
-                        reply_text = transcript
-
-                # Step 3: TTS
+                # Step 2: TTS — speak the transcript back
                 tts_lang = tts_language_override or language
                 await manager.send(session_id, {"type": "status", "stage": "speaking"})
-                tts_audio = await synthesize_edge_tts(reply_text, tts_lang)
+                tts_audio = await synthesize_edge_tts(transcript, tts_lang)
                 timings["tts_done"] = time.time()
                 tts_latency = (timings["tts_done"] - timings["stt_done"]) * 1000
                 total_latency = (timings["tts_done"] - timings["start"]) * 1000
@@ -757,8 +743,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                        (id, session_id, engine, transcript, detected_language, reply_text,
                         stt_latency_ms, llm_latency_ms, tts_latency_ms, total_latency_ms, status)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')""",
-                    (interaction_id, session_id, engine, transcript, language,
-                     reply_text, stt_latency, llm_latency, tts_latency, total_latency)
+                    (interaction_id, session_id, "local", transcript, language,
+                     transcript, stt_latency, 0, tts_latency, total_latency)
                 )
                 conn.commit()
                 conn.close()
