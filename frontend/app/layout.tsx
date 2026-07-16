@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Voice Portal — Your Voice, Your Language",
-  description: "Speak in any language. AI replies in the same language and tone.",
+  title: "Voice Portal — Multilingual Voice Engine",
+  description: "Speak in any language, get real-time transcription and voice playback. 99 languages. Zero cost.",
 };
 
 export default function RootLayout({
