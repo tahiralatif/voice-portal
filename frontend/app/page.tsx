@@ -238,288 +238,190 @@ export default function Home() {
   const isProcessing = stage === "transcribing" || stage === "speaking";
 
   return (
-    <div className="h-screen bg-[#0c0c0c] text-white flex flex-col font-sans">
+    <div className="h-screen bg-[#212121] text-white flex flex-col">
       {/* Header */}
-      <header className="bg-[#141414] border-b border-amber-500/20 px-5 py-3 flex items-center justify-between shrink-0 shadow-lg shadow-black/50">
+      <header className="bg-[#171717] px-5 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          {/* Logo */}
-          <div className="relative">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/30">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-[#141414]" />
+          <div className="w-8 h-8 rounded-lg bg-[#10a37f] flex items-center justify-center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              <line x1="12" y1="19" x2="12" y2="23" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              <line x1="8" y1="23" x2="16" y2="23" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
           </div>
-          <div>
-            <h1 className="text-base font-bold tracking-tight">
-              <span className="text-amber-400">Voice</span>
-              <span className="text-white/80">Portal</span>
-            </h1>
-            <p className="text-[10px] text-white/30 tracking-widest uppercase">Multilingual Voice Engine</p>
-          </div>
+          <span className="text-sm font-medium text-white/90">Voice Portal</span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <a href="/analytics" className="text-xs text-white/40 hover:text-amber-400 transition px-2 py-1 rounded-lg hover:bg-white/5">
+        <div className="flex items-center gap-2">
+          {/* Tab Switcher */}
+          <div className="flex bg-[#2f2f2f] rounded-lg p-0.5">
+            <button onClick={() => setActiveTab("stt")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                activeTab === "stt"
+                  ? "bg-[#424242] text-white"
+                  : "text-white/50 hover:text-white/70"
+              }`}>
+              🎤 Speech
+            </button>
+            <button onClick={() => setActiveTab("tts")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                activeTab === "tts"
+                  ? "bg-[#424242] text-white"
+                  : "text-white/50 hover:text-white/70"
+              }`}>
+              🔊 Voice
+            </button>
+          </div>
+
+          <a href="/analytics" className="text-xs text-white/40 hover:text-white/70 transition px-2 py-1 rounded hover:bg-white/5">
             📊
           </a>
-          <div className={`w-2 h-2 rounded-full ${wsConnected ? "bg-green-500 shadow-lg shadow-green-500/50" : "bg-red-500 animate-pulse"}`} />
+          <div className={`w-1.5 h-1.5 rounded-full ${wsConnected ? "bg-[#10a37f]" : "bg-red-500 animate-pulse"}`} />
         </div>
       </header>
 
-      {/* Tab Switcher */}
-      <div className="bg-[#141414] border-b border-white/5 px-5 shrink-0">
-        <div className="max-w-2xl mx-auto flex gap-1">
-          <button onClick={() => setActiveTab("stt")}
-            className={`flex-1 py-3 text-sm font-medium rounded-t-lg transition-all duration-200 ${
-              activeTab === "stt"
-                ? "bg-[#1a1a1a] text-amber-400 border-b-2 border-amber-400 shadow-lg shadow-amber-500/10"
-                : "text-white/40 hover:text-white/60 hover:bg-white/5"
-            }`}>
-            <span className="mr-2">🎤</span>Speech → Text
-          </button>
-          <button onClick={() => setActiveTab("tts")}
-            className={`flex-1 py-3 text-sm font-medium rounded-t-lg transition-all duration-200 ${
-              activeTab === "tts"
-                ? "bg-[#1a1a1a] text-amber-400 border-b-2 border-amber-400 shadow-lg shadow-amber-500/10"
-                : "text-white/40 hover:text-white/60 hover:bg-white/5"
-            }`}>
-            <span className="mr-2">🔊</span>Text → Speech
-          </button>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+          {messages.length === 0 && !streamingText && (
+            <div className="text-center py-24">
+              <div className="w-14 h-14 rounded-full bg-[#10a37f] flex items-center justify-center mx-auto mb-4">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="12" y1="19" x2="12" y2="23" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="8" y1="23" x2="16" y2="23" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h2 className="text-xl font-medium text-white/90 mb-2">How can I help you?</h2>
+              <p className="text-sm text-white/40">Speak or type in any language — I&apos;ll transcribe and speak it back</p>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] ${msg.role === "user" ? "" : ""}`}>
+                {msg.role === "assistant" && (
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-5 h-5 rounded-sm bg-[#10a37f] flex items-center justify-center">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/></svg>
+                    </div>
+                    <span className="text-xs text-white/40">Voice Portal</span>
+                  </div>
+                )}
+                <div className={`text-[15px] leading-relaxed ${
+                  msg.role === "user" ? "text-white/90" : "text-white/80"
+                }`}>
+                  {msg.text}
+                  {msg.language && msg.role === "user" && (
+                    <span className="ml-2 text-[10px] text-white/25 align-middle">{msg.language.toUpperCase()}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {streamingText && (
+            <div className="flex justify-end">
+              <div className="max-w-[85%]">
+                <div className="text-[15px] leading-relaxed text-white/90">
+                  {streamingText}
+                  <span className="inline-block w-[2px] h-4 bg-white/50 ml-0.5 animate-pulse align-middle" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isProcessing && (
+            <div className="flex justify-start">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="w-5 h-5 rounded-sm bg-[#10a37f] flex items-center justify-center">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/></svg>
+                  </div>
+                  <span className="text-xs text-white/40">Voice Portal</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="text-center">
+              <span className="text-xs text-red-400/80">{error}</span>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {activeTab === "stt" ? (
-          /* STT Tab */
-          <>
-            <div className="flex-1 overflow-y-auto px-4 py-6">
-              <div className="max-w-2xl mx-auto space-y-4">
-                {/* Language Selector */}
-                <div className="flex items-center gap-2 mb-4">
-                  <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
-                    className="bg-[#1a1a1a] border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-white/70 outline-none cursor-pointer hover:border-amber-500/40 transition">
-                    <option value="auto">🔍 Auto-detect</option>
-                    {voices.map((v) => (
-                      <option key={v.code} value={v.code}>{v.name}</option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-white/30">Urdu ke liye select karein</span>
-                </div>
-
-                {messages.length === 0 && !streamingText && (
-                  <div className="text-center py-16">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-amber-500/20">
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                        <line x1="12" y1="19" x2="12" y2="23" />
-                        <line x1="8" y1="23" x2="16" y2="23" />
-                      </svg>
-                    </div>
-                    <h2 className="text-lg font-bold text-white mb-2">Speech to Text</h2>
-                    <p className="text-sm text-white/40">Tap the mic and start speaking</p>
-                    <p className="text-xs text-white/25 mt-1">Real-time transcription in 99 languages</p>
-                  </div>
-                )}
-
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`flex gap-2 max-w-[80%] ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
-                        msg.role === "user"
-                          ? "bg-gradient-to-br from-amber-400 to-amber-600 text-black shadow-lg shadow-amber-500/20"
-                          : "bg-[#2a2a2a] text-white/60 border border-white/10"
-                      }`}>
-                        {msg.role === "user" ? "You" : "AI"}
-                      </div>
-                      <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                        msg.role === "user"
-                          ? "bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/20 text-white rounded-br-md shadow-lg shadow-amber-500/5"
-                          : "bg-[#1a1a1a] border border-white/10 text-white/80 rounded-bl-md"
-                      }`}>
-                        {msg.text}
-                        {msg.language && msg.role === "user" && (
-                          <span className="ml-2 text-[10px] text-amber-400/50">{msg.language.toUpperCase()}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {streamingText && (
-                  <div className="flex justify-end">
-                    <div className="flex gap-2 max-w-[80%] flex-row-reverse">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-black flex items-center justify-center shrink-0 text-xs font-bold shadow-lg shadow-amber-500/20">
-                        You
-                      </div>
-                      <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/20 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed shadow-lg shadow-amber-500/5">
-                        <span className="italic text-white/70">{streamingText}</span>
-                        <span className="inline-block w-0.5 h-4 bg-amber-400 ml-1 animate-pulse" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {isProcessing && (
-                  <div className="flex justify-start">
-                    <div className="flex gap-2">
-                      <div className="w-8 h-8 rounded-full bg-[#2a2a2a] text-white/60 flex items-center justify-center shrink-0 text-xs font-bold border border-white/10">
-                        AI
-                      </div>
-                      <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl rounded-bl-md px-4 py-3">
-                        <div className="flex gap-1">
-                          <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {error && (
-                  <div className="flex justify-center">
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl px-4 py-2 text-xs">
-                      {error}
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-            </div>
-
-            {/* STT Input Bar */}
-            <div className="bg-[#141414] border-t border-amber-500/10 px-4 py-4 shrink-0">
-              <div className="max-w-2xl mx-auto flex items-center justify-center gap-4">
+      {/* Input Area */}
+      <div className="bg-[#212121] px-4 pb-5 pt-2 shrink-0">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-[#2f2f2f] rounded-2xl px-4 py-3">
+            {activeTab === "stt" ? (
+              /* STT Input */
+              <div className="flex items-center gap-3">
                 <button onClick={toggleMic} disabled={isProcessing}
-                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 ${
                     stage === "listening"
-                      ? "bg-red-500 shadow-[0_0_40px_rgba(239,68,68,0.4)] scale-110"
-                      : isProcessing
-                        ? "bg-amber-500/50"
-                        : "bg-gradient-to-br from-amber-400 to-amber-600 hover:scale-105 shadow-[0_0_30px_rgba(245,158,11,0.3)]"
+                      ? "bg-red-500"
+                      : "bg-[#424242] hover:bg-[#525252]"
                   } disabled:opacity-50`}>
-                  <span className="text-2xl">{stage === "listening" ? "⏹" : isProcessing ? "⏳" : "🎤"}</span>
+                  <span className="text-lg">{stage === "listening" ? "⏹" : isProcessing ? "⏳" : "🎤"}</span>
                 </button>
-                <div className="text-left">
-                  <p className="text-sm text-white/70 font-medium">
-                    {stage === "listening" ? "Listening..." : isProcessing ? "Processing..." : "Tap to speak"}
-                  </p>
-                  <p className="text-[10px] text-white/30">
-                    {stage === "listening" ? "Tap to stop recording" : "Hold mic or tap to start"}
+                <div className="flex-1">
+                  <p className="text-sm text-white/60">
+                    {stage === "listening" ? "Listening..." : isProcessing ? "Processing..." : "Tap mic to start speaking"}
                   </p>
                 </div>
+                <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
+                  className="bg-[#424242] border-none rounded-lg px-2 py-1.5 text-xs text-white/60 outline-none cursor-pointer">
+                  <option value="auto">Auto</option>
+                  {voices.map((v) => (
+                    <option key={v.code} value={v.code}>{v.name}</option>
+                  ))}
+                </select>
               </div>
-            </div>
-          </>
-        ) : (
-          /* TTS Tab */
-          <>
-            <div className="flex-1 overflow-y-auto px-4 py-6">
-              <div className="max-w-2xl mx-auto space-y-4">
-                {messages.length === 0 && (
-                  <div className="text-center py-16">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-amber-500/20">
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                      </svg>
-                    </div>
-                    <h2 className="text-lg font-bold text-white mb-2">Text to Speech</h2>
-                    <p className="text-sm text-white/40">Type text and hear it spoken</p>
-                    <p className="text-xs text-white/25 mt-1">400+ voices across 17 languages</p>
-                  </div>
-                )}
-
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`flex gap-2 max-w-[80%] ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
-                        msg.role === "user"
-                          ? "bg-gradient-to-br from-amber-400 to-amber-600 text-black shadow-lg shadow-amber-500/20"
-                          : "bg-[#2a2a2a] text-white/60 border border-white/10"
-                      }`}>
-                        {msg.role === "user" ? "You" : "🔊"}
-                      </div>
-                      <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                        msg.role === "user"
-                          ? "bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/20 text-white rounded-br-md shadow-lg shadow-amber-500/5"
-                          : "bg-[#1a1a1a] border border-white/10 text-white/80 rounded-bl-md"
-                      }`}>
-                        {msg.text}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {isProcessing && (
-                  <div className="flex justify-start">
-                    <div className="flex gap-2">
-                      <div className="w-8 h-8 rounded-full bg-[#2a2a2a] text-white/60 flex items-center justify-center shrink-0 text-xs border border-white/10">
-                        🔊
-                      </div>
-                      <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl rounded-bl-md px-4 py-3">
-                        <div className="flex gap-1">
-                          <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {error && (
-                  <div className="flex justify-center">
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl px-4 py-2 text-xs">
-                      {error}
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-            </div>
-
-            {/* TTS Input Bar */}
-            <div className="bg-[#141414] border-t border-amber-500/10 px-4 py-4 shrink-0">
-              <div className="max-w-2xl mx-auto">
-                <div className="flex items-end gap-2 bg-[#1a1a1a] border border-white/10 rounded-2xl px-3 py-2 focus-within:border-amber-500/30 transition">
+            ) : (
+              /* TTS Input */
+              <div className="flex items-end gap-2">
+                <textarea ref={textareaRef} value={ttsText} onChange={(e) => setTtsText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Type text to hear it spoken..."
+                  rows={1}
+                  className="flex-1 bg-transparent text-sm text-white/90 placeholder-white/30 outline-none resize-none py-1 max-h-[120px]"
+                  disabled={isProcessing} />
+                <div className="flex items-center gap-2 shrink-0">
                   <select value={ttsLanguage} onChange={(e) => setTtsLanguage(e.target.value)}
-                    className="bg-[#0c0c0c] border border-white/10 rounded-lg px-2 py-2 text-xs text-white/60 outline-none shrink-0 mb-0.5">
+                    className="bg-[#424242] border-none rounded-lg px-2 py-1.5 text-xs text-white/60 outline-none cursor-pointer">
                     {voices.map((v) => (
                       <option key={v.code} value={v.code}>{v.name}</option>
                     ))}
                   </select>
-                  <textarea ref={textareaRef} value={ttsText} onChange={(e) => setTtsText(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type text to hear it spoken..."
-                    rows={1}
-                    className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none resize-none py-2 max-h-[120px]"
-                    disabled={isProcessing} />
                   <button onClick={sendTTS} disabled={!ttsText.trim() || isProcessing}
-                    className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-black flex items-center justify-center shrink-0 mb-0.5 hover:shadow-lg hover:shadow-amber-500/30 transition disabled:opacity-30">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    className="w-8 h-8 rounded-lg bg-[#10a37f] flex items-center justify-center hover:bg-[#0e8f6e] transition disabled:opacity-30">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>
                   </button>
                 </div>
-                <p className="text-[10px] text-white/20 text-center mt-2">
-                  Type text and press Enter or click play 🔊
-                </p>
               </div>
-            </div>
-          </>
-        )}
+            )}
+          </div>
+          <p className="text-center text-[11px] text-white/20 mt-2">
+            {activeTab === "stt"
+              ? "Speak in any language — real-time transcription"
+              : "Type text — hear it spoken in any language"
+            }
+          </p>
+        </div>
       </div>
     </div>
   );
