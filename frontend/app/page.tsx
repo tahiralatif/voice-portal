@@ -19,6 +19,7 @@ export default function Home() {
   const [sessionId] = useState(() => crypto.randomUUID());
   const [voices, setVoices] = useState<Voice[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState("auto");
+  const [engine, setEngine] = useState<"local" | "hf">("local");
   const [ttsText, setTtsText] = useState("");
   const [ttsLanguage, setTtsLanguage] = useState("en");
   const [wsConnected, setWsConnected] = useState(false);
@@ -219,7 +220,7 @@ export default function Home() {
         wsRef.current.send(JSON.stringify(stopMsg));
 
         // Send final complete audio for full STT
-        const msg: Record<string, any> = { type: "audio", engine: "local", audio: b64 };
+        const msg: Record<string, any> = { type: "audio", engine: engine, audio: b64 };
         if (selectedLanguage !== "auto") msg.language = selectedLanguage;
         wsRef.current.send(JSON.stringify(msg));
       }
@@ -275,14 +276,32 @@ export default function Home() {
 
       <div className="flex-1 flex flex-col items-center px-4 py-8 gap-6 max-w-2xl mx-auto w-full">
         {/* Language Selector */}
-        <div className="bg-[#151528] border border-white/10 rounded-full px-3 py-1.5">
-          <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
-            className="bg-transparent text-xs text-gray-300 outline-none cursor-pointer">
-            <option value="auto" className="bg-[#151528]">🔍 Auto-detect</option>
-            {voices.map((v) => (
-              <option key={v.code} value={v.code} className="bg-[#151528]">{v.name}</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2">
+          <div className="bg-[#151528] border border-white/10 rounded-full px-3 py-1.5">
+            <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
+              className="bg-transparent text-xs text-gray-300 outline-none cursor-pointer">
+              <option value="auto" className="bg-[#151528]">🔍 Auto-detect</option>
+              {voices.map((v) => (
+                <option key={v.code} value={v.code} className="bg-[#151528]">{v.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Engine Toggle */}
+          <div className="bg-[#151528] border border-white/10 rounded-full flex overflow-hidden">
+            <button onClick={() => setEngine("local")}
+              className={`px-3 py-1.5 text-[10px] font-medium transition ${
+                engine === "local" ? "bg-purple-500/20 text-purple-300" : "text-gray-500 hover:text-gray-300"
+              }`}>
+              💻 Local
+            </button>
+            <button onClick={() => setEngine("hf")}
+              className={`px-3 py-1.5 text-[10px] font-medium transition ${
+                engine === "hf" ? "bg-teal-500/20 text-teal-300" : "text-gray-500 hover:text-gray-300"
+              }`}>
+              ☁️ HF API
+            </button>
+          </div>
         </div>
 
         {/* Section 1: STT — Speak → Text */}
