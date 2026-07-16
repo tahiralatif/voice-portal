@@ -38,7 +38,6 @@ export default function Home() {
   // TTS state
   const [ttsText, setTtsText] = useState("");
   const [ttsLanguage, setTtsLanguage] = useState("en");
-  const [ttsSpeed, setTtsSpeed] = useState(1.0);
   const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
@@ -56,6 +55,10 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
+  const stageRef = useRef<Stage>("idle");
+
+  // Keep stageRef in sync
+  useEffect(() => { stageRef.current = stage; }, [stage]);
 
   useEffect(() => {
     fetch("/api/languages").then(r => r.json()).then(d => setVoices(d.voices || [])).catch(() => {});
@@ -98,66 +101,6 @@ export default function Home() {
     }
   }, []);
 
-  const connectWs = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) return;
-    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
-
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${sessionId}`);
-
-    ws.onopen = () => { setWsConnected(true); };
-    ws.onclose = () => { setWsConnected(false); reconnectTimer.current = setTimeout(connectWs, 3000); };
-    ws.onerror = () => {};
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      switch (data.type) {
-        case "status":
-          if (data.stage === "transcribing") setStage("transcribing");
-          if (data.stage === "speaking") setStage("speaking");
-          if (data.stage === "error") { setError(data.message || "Error"); setStage("idle"); setIsRecording(false); }
-          break;
-        case "interim_transcript":
-          if (stage === "listening") setStreamingText(data.text || "");
-          break;
-        case "transcript":
-          setTranscript(data.text);
-          setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
-            role: "user",
-            text: data.text,
-            language: data.language,
-            timestamp: Date.now(),
-          }]);
-          setStreamingText("");
-          setIsRecording(false);
-          setRecordingTime(0);
-          break;
-        case "audio_reply":
-          setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            text: "🔊 Audio played",
-            timestamp: Date.now(),
-          }]);
-          playAudio(data.audio);
-          setTtsLatency(Math.round(data.total_latency_ms || 0));
-          break;
-        case "interaction_complete":
-          setStage("idle");
-          break;
-      }
-    };
-
-    wsRef.current = ws;
-  }, [sessionId, playAudio, stage]);
-
-  useEffect(() => {
-    connectWs();
-    return () => { if (reconnectTimer.current) clearTimeout(reconnectTimer.current); wsRef.current?.close(); };
-  }, [connectWs]);
-
   // Waveform visualization
   const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
@@ -169,8 +112,6 @@ export default function Home() {
     const dataArray = new Uint8Array(bufferLength);
     analyser.getByteTimeDomainData(dataArray);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw waveform
     ctx.lineWidth = 2;
     ctx.strokeStyle = "#7c3aed";
     ctx.beginPath();
@@ -184,9 +125,72 @@ export default function Home() {
     }
     ctx.lineTo(canvas.width, canvas.height / 2);
     ctx.stroke();
-
     animFrameRef.current = requestAnimationFrame(drawWaveform);
   }, []);
+
+  // Connect WebSocket once per sessionId
+  useEffect(() => {
+    const connect = () => {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${sessionId}`);
+
+      ws.onopen = () => { setWsConnected(true); };
+      ws.onclose = () => {
+        setWsConnected(false);
+        reconnectTimer.current = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => {};
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        switch (data.type) {
+          case "status":
+            if (data.stage === "transcribing") setStage("transcribing");
+            if (data.stage === "speaking") setStage("speaking");
+            if (data.stage === "error") { setError(data.message || "Error"); setStage("idle"); setIsRecording(false); }
+            break;
+          case "interim_transcript":
+            if (stageRef.current === "listening") setStreamingText(data.text || "");
+            break;
+          case "transcript":
+            setTranscript(data.text);
+            setMessages(prev => [...prev, {
+              id: crypto.randomUUID(),
+              role: "user",
+              text: data.text,
+              language: data.language,
+              timestamp: Date.now(),
+            }]);
+            setStreamingText("");
+            setIsRecording(false);
+            setRecordingTime(0);
+            break;
+          case "audio_reply":
+            setMessages(prev => [...prev, {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              text: "🔊 Audio played",
+              timestamp: Date.now(),
+            }]);
+            playAudio(data.audio);
+            setTtsLatency(Math.round(data.total_latency_ms || 0));
+            break;
+          case "interaction_complete":
+            setStage("idle");
+            break;
+        }
+      };
+
+      wsRef.current = ws;
+    };
+
+    connect();
+    return () => {
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
+    };
+  }, [sessionId, playAudio]);
 
   const startRecording = async () => {
     setError("");
@@ -308,7 +312,6 @@ export default function Home() {
       type: "text",
       text: ttsText,
       language: ttsLanguage,
-      speed: ttsSpeed,
     }));
     setTtsText("");
   };
@@ -363,7 +366,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Tab Switcher */}
             <div className="flex bg-slate-100 rounded-xl p-1">
               <button onClick={() => setActiveTab("stt")}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
@@ -382,10 +384,7 @@ export default function Home() {
                 🔊 Text to Speech
               </button>
             </div>
-
-            <a href="/analytics" className="text-slate-400 hover:text-violet-600 transition p-2 rounded-lg hover:bg-slate-100">
-              📊
-            </a>
+            <a href="/analytics" className="text-slate-400 hover:text-violet-600 transition p-2 rounded-lg hover:bg-slate-100">📊</a>
             <div className={`w-2 h-2 rounded-full ${wsConnected ? "bg-emerald-500" : "bg-red-500 animate-pulse"}`} />
           </div>
         </div>
@@ -401,14 +400,12 @@ export default function Home() {
               <div className="p-8">
                 {/* Waveform */}
                 <div className="bg-gradient-to-br from-slate-50 to-violet-50/50 rounded-2xl p-4 mb-6">
-                  <canvas ref={canvasRef} width={800} height={100}
-                    className="w-full h-24 rounded-xl" />
+                  <canvas ref={canvasRef} width={800} height={100} className="w-full h-24 rounded-xl" />
                 </div>
 
                 {/* Controls */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    {/* Main Mic Button */}
                     <button onClick={isRecording ? stopRecording : startRecording} disabled={isProcessing}
                       className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 ${
                         isRecording
@@ -418,7 +415,6 @@ export default function Home() {
                       <span className="text-2xl">{isRecording ? "⏹" : "🎤"}</span>
                     </button>
 
-                    {/* Pause/Resume */}
                     {isRecording && (
                       <button onClick={stage === "paused" ? resumeRecording : pauseRecording}
                         className="w-12 h-12 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all">
@@ -436,7 +432,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Language Selector */}
                   <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
                     className="bg-slate-100 border-none rounded-xl px-4 py-2.5 text-sm text-slate-600 outline-none cursor-pointer hover:bg-slate-200 transition">
                     <option value="auto">🔍 Auto-detect</option>
@@ -472,47 +467,19 @@ export default function Home() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => copyText(transcript)}
-                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-lg transition">
-                      📋 Copy
-                    </button>
+                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-lg transition">📋 Copy</button>
                     <button onClick={downloadTranscript}
-                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-lg transition">
-                      ⬇️ Download
-                    </button>
+                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-lg transition">⬇️ Download</button>
                     <button onClick={clearTranscript}
-                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-red-600 bg-slate-100 hover:bg-red-50 rounded-lg transition">
-                      🗑️ Clear
-                    </button>
+                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-red-600 bg-slate-100 hover:bg-red-50 rounded-lg transition">🗑️ Clear</button>
                   </div>
                 </div>
                 <p className="text-slate-800 text-lg leading-relaxed">{transcript}</p>
               </div>
             )}
 
-            {/* Messages */}
-            {messages.length > 0 && (
-              <div className="space-y-4">
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-5 py-3 ${
-                      msg.role === "user"
-                        ? "bg-gradient-to-br from-violet-600 to-indigo-600 text-white"
-                        : "bg-white border border-slate-200 text-slate-700 shadow-sm"
-                    }`}>
-                      <p className="text-sm">{msg.text}</p>
-                      {msg.language && (
-                        <span className="text-[10px] opacity-60 ml-2">{msg.language.toUpperCase()}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-5 py-3 text-sm text-center">
-                {error}
-              </div>
+              <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-5 py-3 text-sm text-center">{error}</div>
             )}
           </div>
         ) : (
@@ -524,7 +491,6 @@ export default function Home() {
 
               {/* Text Input */}
               <div className="mb-6">
-                <label className="text-sm font-medium text-slate-700 mb-2 block">Text</label>
                 <textarea value={ttsText} onChange={(e) => setTtsText(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Type or paste text to convert to speech..."
@@ -532,9 +498,9 @@ export default function Home() {
               </div>
 
               {/* Controls Row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="flex items-end gap-4">
                 {/* Voice Selection */}
-                <div>
+                <div className="flex-1">
                   <label className="text-sm font-medium text-slate-700 mb-2 block">Voice</label>
                   <select value={ttsLanguage} onChange={(e) => setTtsLanguage(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-500 transition cursor-pointer">
@@ -544,40 +510,23 @@ export default function Home() {
                   </select>
                 </div>
 
-                {/* Speed Control */}
-                <div>
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Speed: {ttsSpeed.toFixed(1)}x
-                  </label>
-                  <input type="range" min="0.5" max="2.0" step="0.1"
-                    value={ttsSpeed} onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-violet-600" />
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                    <span>0.5x</span>
-                    <span>1.0x</span>
-                    <span>2.0x</span>
-                  </div>
-                </div>
-
                 {/* Generate Button */}
-                <div className="flex items-end">
-                  <button onClick={sendTTS} disabled={!ttsText.trim() || isProcessing}
-                    className="w-full h-12 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                    {isProcessing ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                          <polygon points="5 3 19 12 5 21 5 3"/>
-                        </svg>
-                        Generate Speech
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button onClick={sendTTS} disabled={!ttsText.trim() || isProcessing}
+                  className="h-12 px-8 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {isProcessing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                      </svg>
+                      Generate Speech
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -594,14 +543,8 @@ export default function Home() {
                 <audio ref={audioRef} src={ttsAudioUrl}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
-                  onTimeUpdate={(e) => {
-                    const audio = e.target as HTMLAudioElement;
-                    setAudioProgress(audio.currentTime);
-                  }}
-                  onLoadedMetadata={(e) => {
-                    const audio = e.target as HTMLAudioElement;
-                    setAudioDuration(audio.duration);
-                  }}
+                  onTimeUpdate={(e) => setAudioProgress((e.target as HTMLAudioElement).currentTime)}
+                  onLoadedMetadata={(e) => setAudioDuration((e.target as HTMLAudioElement).duration)}
                   className="hidden" />
 
                 {/* Waveform Visualization */}
@@ -611,8 +554,8 @@ export default function Home() {
                       <div key={i}
                         className="w-1 bg-gradient-to-t from-violet-500 to-indigo-500 rounded-full transition-all duration-150"
                         style={{
-                          height: `${Math.random() * 100}%`,
-                          opacity: audioProgress > 0 && (audioProgress / audioDuration) * 50 > i ? 1 : 0.3,
+                          height: `${20 + Math.random() * 80}%`,
+                          opacity: audioDuration > 0 && (audioProgress / audioDuration) * 50 > i ? 1 : 0.3,
                         }} />
                     ))}
                   </div>
@@ -630,69 +573,35 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Controls */}
+                {/* Play Controls */}
                 <div className="flex items-center justify-center gap-3">
-                  <button onClick={() => {
-                    const audio = audioRef.current;
-                    if (audio) { audio.currentTime = Math.max(0, audio.currentTime - 10); }
-                  }} className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition">
-                    ⏪
-                  </button>
-                  <button onClick={() => {
-                    const audio = audioRef.current;
-                    if (audio) { isPlaying ? audio.pause() : audio.play(); }
-                  }} className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 hover:shadow-lg hover:shadow-violet-500/30 flex items-center justify-center transition-all text-white text-xl">
+                  <button onClick={() => { const a = audioRef.current; if (a) a.currentTime = Math.max(0, a.currentTime - 10); }}
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition">⏪</button>
+                  <button onClick={() => { const a = audioRef.current; if (a) { isPlaying ? a.pause() : a.play(); } }}
+                    className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 hover:shadow-lg hover:shadow-violet-500/30 flex items-center justify-center transition-all text-white text-xl">
                     {isPlaying ? "⏸️" : "▶️"}
                   </button>
-                  <button onClick={() => {
-                    const audio = audioRef.current;
-                    if (audio) { audio.currentTime = Math.min(audio.duration, audio.currentTime + 10); }
-                  }} className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition">
-                    ⏩
-                  </button>
+                  <button onClick={() => { const a = audioRef.current; if (a) a.currentTime = Math.min(a.duration, a.currentTime + 10); }}
+                    className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition">⏩</button>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="flex items-center justify-center gap-2 mt-4">
                   <a href={ttsAudioUrl} download="speech.mp3"
-                    className="px-4 py-2 text-xs text-slate-600 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-xl transition flex items-center gap-1">
-                    ⬇️ Download
-                  </a>
+                    className="px-4 py-2 text-xs text-slate-600 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-xl transition flex items-center gap-1">⬇️ Download</a>
                   <button onClick={() => navigator.clipboard.writeText(window.location.origin + ttsAudioUrl)}
-                    className="px-4 py-2 text-xs text-slate-600 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-xl transition flex items-center gap-1">
-                    🔗 Copy Link
-                  </button>
+                    className="px-4 py-2 text-xs text-slate-600 hover:text-violet-600 bg-slate-100 hover:bg-violet-50 rounded-xl transition flex items-center gap-1">🔗 Copy Link</button>
                 </div>
               </div>
             )}
 
-            {/* Messages */}
-            {messages.length > 0 && (
-              <div className="space-y-4">
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-5 py-3 ${
-                      msg.role === "user"
-                        ? "bg-gradient-to-br from-violet-600 to-indigo-600 text-white"
-                        : "bg-white border border-slate-200 text-slate-700 shadow-sm"
-                    }`}>
-                      <p className="text-sm">{msg.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-5 py-3 text-sm text-center">
-                {error}
-              </div>
+              <div className="bg-red-50 border border-red-200 text-red-600 rounded-2xl px-5 py-3 text-sm text-center">{error}</div>
             )}
           </div>
         )}
       </main>
 
-      {/* Footer */}
       <footer className="text-center py-6 text-xs text-slate-400">
         Powered by faster-whisper + Edge TTS • No API keys required
       </footer>
