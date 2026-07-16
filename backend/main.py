@@ -211,7 +211,7 @@ async def transcribe_partial(audio_bytes: bytes, language_override: str = None) 
 
 
 # === TTS Engine (Edge TTS — free, 400+ voices) ===
-async def synthesize_edge_tts(text: str, language: str = "en") -> bytes:
+async def synthesize_edge_tts(text: str, language: str = "en", rate: str = "+0%") -> bytes:
     import edge_tts
     voice_map = {
         "en": "en-US-GuyNeural",
@@ -234,7 +234,7 @@ async def synthesize_edge_tts(text: str, language: str = "en") -> bytes:
     }
     voice = voice_map.get(language, "en-US-GuyNeural")
     try:
-        communicate = edge_tts.Communicate(text, voice)
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
         audio_data = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -468,7 +468,10 @@ class ConnectionManager:
     async def send(self, session_id: str, data: dict):
         ws = self.active.get(session_id)
         if ws:
-            await ws.send_json(data)
+            try:
+                await ws.send_json(data)
+            except Exception:
+                self.active.pop(session_id, None)
 
 manager = ConnectionManager()
 
@@ -598,13 +601,18 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 try:
                     text = data.get("text", "").strip()
                     tts_lang = data.get("language", "en")
+                    speed = data.get("speed", 1.0)
                     if not text:
                         await manager.send(session_id, {"type": "status", "stage": "error", "message": "No text provided"})
                         continue
 
+                    # Convert speed multiplier to Edge TTS rate string
+                    rate_pct = int((speed - 1.0) * 100)
+                    rate_str = f"{'+' if rate_pct >= 0 else ''}{rate_pct}%"
+
                     await manager.send(session_id, {"type": "status", "stage": "speaking"})
                     start = time.time()
-                    tts_audio = await synthesize_edge_tts(text, tts_lang)
+                    tts_audio = await synthesize_edge_tts(text, tts_lang, rate=rate_str)
                     tts_latency = (time.time() - start) * 1000
                     tts_b64 = base64.b64encode(tts_audio).decode("utf-8")
 
