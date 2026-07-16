@@ -140,7 +140,7 @@ export default function Home() {
             setRecordingTime(0);
             break;
           case "audio_reply": {
-            // Auto-play the audio reply in STT mode
+            // Auto-play the audio reply
             try {
               const bin = atob(d.audio);
               const bytes = new Uint8Array(bin.length);
@@ -149,16 +149,12 @@ export default function Home() {
               const url = URL.createObjectURL(blob);
               setTtsAudioUrl(url);
               setTtsLatency(Math.round(d.total_latency_ms || 0));
-              // Auto-play in STT mode
-              if (stageRef.current === "transcribing" || stageRef.current === "listening") {
-                const audio = new Audio(url);
-                audio.onended = () => setStage("idle");
-                audio.onerror = () => setStage("idle");
-                audio.play().catch(() => setStage("idle"));
-              }
-            } catch (e) { console.error("Audio error:", e); }
+              const audio = new Audio(url);
+              audio.onended = () => setStage("idle");
+              audio.onerror = () => setStage("idle");
+              audio.play().catch(() => setStage("idle"));
+            } catch (e) { console.error("Audio error:", e); setStage("idle"); }
             setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", text: "🔊 Audio played", timestamp: Date.now() }]);
-            setStage("idle");
             break;
           }
           case "interaction_complete":
