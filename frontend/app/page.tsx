@@ -140,7 +140,7 @@ export default function Home() {
             setRecordingTime(0);
             break;
           case "audio_reply": {
-            // Play audio inline — no callback dependency
+            // Auto-play the audio reply in STT mode
             try {
               const bin = atob(d.audio);
               const bytes = new Uint8Array(bin.length);
@@ -149,6 +149,13 @@ export default function Home() {
               const url = URL.createObjectURL(blob);
               setTtsAudioUrl(url);
               setTtsLatency(Math.round(d.total_latency_ms || 0));
+              // Auto-play in STT mode
+              if (stageRef.current === "transcribing" || stageRef.current === "listening") {
+                const audio = new Audio(url);
+                audio.onended = () => setStage("idle");
+                audio.onerror = () => setStage("idle");
+                audio.play().catch(() => setStage("idle"));
+              }
             } catch (e) { console.error("Audio error:", e); }
             setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", text: "🔊 Audio played", timestamp: Date.now() }]);
             setStage("idle");
@@ -323,6 +330,28 @@ export default function Home() {
                   <span className="text-xs font-medium text-violet-600 uppercase tracking-wider">Live Transcription</span>
                 </div>
                 <p className="text-slate-700 text-lg leading-relaxed">{streamingText}<span className="inline-block w-0.5 h-5 bg-violet-500 ml-1 animate-pulse align-middle" /></p>
+              </div>
+            )}
+
+            {/* Processing / Transcribing indicator */}
+            {!streamingText && !transcript && (stage === "transcribing" || stage === "speaking") && (
+              <div className="bg-white rounded-2xl shadow-lg shadow-slate-200/50 border border-slate-200/60 p-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">
+                      {stage === "speaking" ? "Generating audio..." : "Transcribing your speech..."}
+                    </p>
+                    <p className="text-xs text-slate-400">This may take 10-30 seconds on CPU</p>
+                  </div>
+                </div>
+                {/* Animated progress bar */}
+                <div className="mt-4 h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full animate-[shimmer_2s_ease-in-out_infinite]" style={{ width: "60%" }} />
+                </div>
+                <style>{`@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }`}</style>
               </div>
             )}
 
