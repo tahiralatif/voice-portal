@@ -190,7 +190,7 @@ export default function Home() {
       };
 
       mediaRecorderRef.current = recorder;
-      recorder.start();
+      recorder.start(1000); // timeslice=1000ms: fires ondataavailable every 1s for streaming
       setStage("listening");
 
       // Notify backend that streaming is starting (sends language override for interim STT)
