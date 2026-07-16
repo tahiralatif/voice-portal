@@ -10,35 +10,51 @@ interface Voice {
   voice: string;
 }
 
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  language?: string;
+  timestamp: number;
+  isStreaming?: boolean;
+}
+
 export default function Home() {
   const [stage, setStage] = useState<Stage>("idle");
-  const [transcript, setTranscript] = useState("");
-  const [language, setLanguage] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
   const [sessionId] = useState(() => crypto.randomUUID());
   const [voices, setVoices] = useState<Voice[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState("auto");
   const [ttsText, setTtsText] = useState("");
   const [ttsLanguage, setTtsLanguage] = useState("en");
   const [wsConnected, setWsConnected] = useState(false);
-  const [streamingTranscript, setStreamingTranscript] = useState("");
-  const [latency, setLatency] = useState<{ stt: number; tts: number; total: number }>({
-    stt: 0, tts: 0, total: 0,
-  });
+  const [streamingText, setStreamingText] = useState("");
 
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animFrameRef = useRef<number>(0);
   const reconnectTimer = useRef<NodeJS.Timeout | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch("/api/languages").then(r => r.json()).then(d => setVoices(d.voices || [])).catch(() => {});
   }, []);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingText]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 150) + "px";
+    }
+  }, [ttsText]);
 
   const playAudio = useCallback((b64: string) => {
     try {
@@ -79,21 +95,35 @@ export default function Home() {
           break;
         case "interim_transcript":
           if (stage === "listening") {
-            setStreamingTranscript(data.text || "");
+            setStreamingText(data.text || "");
           }
           break;
         case "transcript":
-          setTranscript(data.text);
-          setLanguage(data.language);
-          setStreamingTranscript("");
-          setLatency((prev) => ({ ...prev, stt: Math.round(data.latency_ms) }));
+          // Replace streaming message with final transcript
+          setMessages(prev => {
+            const withoutStreaming = prev.filter(m => !m.isStreaming);
+            return [...withoutStreaming, {
+              id: crypto.randomUUID(),
+              role: "user",
+              text: data.text,
+              language: data.language,
+              timestamp: Date.now(),
+            }];
+          });
+          setStreamingText("");
           break;
         case "audio_reply":
-          setLatency((prev) => ({
-            ...prev,
-            tts: Math.round(data.latency_ms),
-            total: Math.round(data.total_latency_ms),
-          }));
+          // Add assistant message with transcript (what was spoken back)
+          setMessages(prev => {
+            const lastUser = [...prev].reverse().find(m => m.role === "user");
+            const replyText = lastUser?.text || "Audio played";
+            return [...prev, {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              text: replyText,
+              timestamp: Date.now(),
+            }];
+          });
           playAudio(data.audio);
           break;
         case "interaction_complete":
@@ -103,56 +133,21 @@ export default function Home() {
     };
 
     wsRef.current = ws;
-  }, [sessionId, playAudio]);
+  }, [sessionId, playAudio, stage]);
 
   useEffect(() => {
     connectWs();
     return () => { if (reconnectTimer.current) clearTimeout(reconnectTimer.current); wsRef.current?.close(); };
   }, [connectWs]);
 
-  const drawWaveform = useCallback(() => {
-    const canvas = canvasRef.current;
-    const analyser = analyserRef.current;
-    if (!canvas || !analyser) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    analyser.getByteTimeDomainData(dataArray);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = stage === "listening" ? "#00CEC9" : "#6C5CE7";
-    ctx.beginPath();
-    const sliceWidth = canvas.width / bufferLength;
-    let x = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      const v = dataArray[i] / 128.0;
-      const y = (v * canvas.height) / 2;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      x += sliceWidth;
-    }
-    ctx.lineTo(canvas.width, canvas.height / 2);
-    ctx.stroke();
-    animFrameRef.current = requestAnimationFrame(drawWaveform);
-  }, [stage]);
-
   const startRecording = async () => {
     setError("");
-    setTranscript("");
-    setStreamingTranscript("");
-    setLatency({ stt: 0, tts: 0, total: 0 });
+    setStreamingText("");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 },
       });
-      const audioCtx = new AudioContext();
-      const source = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
-      analyserRef.current = analyser;
-      drawWaveform();
 
       const recorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -161,7 +156,6 @@ export default function Home() {
 
       chunksRef.current = [];
 
-      // Stream audio chunks every 1s while recording for live transcription
       chunkIntervalRef.current = setInterval(() => {
         if (recorder.state === "recording" && chunksRef.current.length > 0 &&
             wsRef.current?.readyState === WebSocket.OPEN) {
@@ -179,21 +173,18 @@ export default function Home() {
 
       recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       recorder.onstop = () => {
-        // Stop streaming chunks
         if (chunkIntervalRef.current) {
           clearInterval(chunkIntervalRef.current);
           chunkIntervalRef.current = null;
         }
         stream.getTracks().forEach((t) => t.stop());
-        cancelAnimationFrame(animFrameRef.current);
         sendAudio();
       };
 
       mediaRecorderRef.current = recorder;
-      recorder.start(1000); // timeslice=1000ms: fires ondataavailable every 1s for streaming
+      recorder.start(1000);
       setStage("listening");
 
-      // Notify backend that streaming is starting (sends language override for interim STT)
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         const msg: Record<string, any> = { type: "start_streaming" };
         if (selectedLanguage !== "auto") msg.language = selectedLanguage;
@@ -213,12 +204,10 @@ export default function Home() {
     reader.onloadend = () => {
       const b64 = (reader.result as string).split(",")[1];
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        // Signal end of streaming (sends language override for final STT context)
         const stopMsg: Record<string, any> = { type: "stop_streaming" };
         if (selectedLanguage !== "auto") stopMsg.language = selectedLanguage;
         wsRef.current.send(JSON.stringify(stopMsg));
 
-        // Send final complete audio for full STT
         const msg: Record<string, any> = { type: "audio", engine: "local", audio: b64 };
         if (selectedLanguage !== "auto") msg.language = selectedLanguage;
         wsRef.current.send(JSON.stringify(msg));
@@ -232,134 +221,180 @@ export default function Home() {
     else if (stage === "idle") startRecording();
   };
 
-  const sendTTS = () => {
+  const sendTextMessage = () => {
     if (!ttsText.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     setStage("speaking");
     setError("");
-    setLatency({ stt: 0, tts: 0, total: 0 });
     wsRef.current.send(JSON.stringify({ type: "text", text: ttsText, language: ttsLanguage }));
+
+    // Add user message
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: ttsText,
+      timestamp: Date.now(),
+    }]);
+
+    setTtsText("");
   };
 
-  const copyText = async (text: string) => {
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
-  };
-
-  const stageLabel: Record<Stage, string> = {
-    idle: "Tap to speak",
-    listening: "Listening...",
-    transcribing: "Transcribing...",
-    speaking: "Speaking...",
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendTextMessage();
+    }
   };
 
   const isProcessing = stage === "transcribing" || stage === "speaking";
 
   return (
-    <div className="min-h-screen bg-[#0A0A1A] text-white flex flex-col">
+    <div className="h-screen bg-[#f8f9fa] flex flex-col">
       {/* Header */}
-      <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-teal-500 flex items-center justify-center">
-            <span className="text-lg">🎙️</span>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+            <span className="text-sm">🎙️</span>
           </div>
-          <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-teal-400 bg-clip-text text-transparent">
-            Voice Portal
-          </h1>
+          <h1 className="text-base font-semibold text-gray-800">Voice Portal</h1>
         </div>
         <div className="flex items-center gap-3">
-          <a href="/analytics" className="text-sm text-gray-400 hover:text-white transition px-3 py-1.5 rounded-lg hover:bg-white/5">
-            📊 Analytics
+          <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
+            className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 outline-none cursor-pointer hover:bg-gray-200 transition">
+            <option value="auto">🔍 Auto-detect</option>
+            {voices.map((v) => (
+              <option key={v.code} value={v.code}>{v.name}</option>
+            ))}
+          </select>
+          <a href="/analytics" className="text-xs text-gray-500 hover:text-gray-800 transition px-2 py-1.5 rounded-lg hover:bg-gray-100">
+            📊
           </a>
           <div className={`w-2 h-2 rounded-full ${wsConnected ? "bg-green-500" : "bg-red-500 animate-pulse"}`} />
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col items-center px-4 py-8 gap-6 max-w-2xl mx-auto w-full">
-        {/* Language Selector */}
-        <div className="bg-[#151528] border border-white/10 rounded-full px-3 py-1.5">
-          <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}
-            className="bg-transparent text-xs text-gray-300 outline-none cursor-pointer">
-            <option value="auto" className="bg-[#151528]">🔍 Auto-detect</option>
-            {voices.map((v) => (
-              <option key={v.code} value={v.code} className="bg-[#151528]">{v.name}</option>
-            ))}
-          </select>
-        </div>
-        <p className="text-[10px] text-gray-600 -mt-3">Urdu ke liye "Urdu" select karein — Auto-detect Hindi pick karta hai</p>
+      {/* Chat Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-6">
+        <div className="max-w-2xl mx-auto space-y-4">
+          {messages.length === 0 && !streamingText && (
+            <div className="text-center py-20">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">🎙️</span>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">Voice Portal</h2>
+              <p className="text-sm text-gray-500 mb-1">Speak or type in any language</p>
+              <p className="text-xs text-gray-400">Tap the mic to start • Urdu ke liye language select karein</p>
+            </div>
+          )}
 
-        {/* Section 1: STT — Speak → Text */}
-        <div className="w-full bg-[#151528] border border-white/10 rounded-xl p-5">
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">🗣 Speak → Text</p>
-          <canvas ref={canvasRef} width={600} height={80}
-            className="w-full h-[80px] rounded-lg bg-[#0A0A1A] border border-white/5 mb-3" />
-          <div className="flex items-center gap-3">
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`flex gap-2 max-w-[80%] ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                {/* Avatar */}
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-medium ${
+                  msg.role === "user"
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-200 text-gray-600"
+                }`}>
+                  {msg.role === "user" ? "You" : "AI"}
+                </div>
+                {/* Bubble */}
+                <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                  msg.role === "user"
+                    ? "bg-gray-800 text-white rounded-br-md"
+                    : "bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm"
+                }`}>
+                  {msg.text}
+                  {msg.language && msg.role === "user" && (
+                    <span className="ml-2 text-[10px] opacity-50">{msg.language.toUpperCase()}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Streaming message */}
+          {streamingText && (
+            <div className="flex justify-end">
+              <div className="flex gap-2 max-w-[80%] flex-row-reverse">
+                <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0 text-xs font-medium">
+                  You
+                </div>
+                <div className="bg-gray-800 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed">
+                  <span className="opacity-70 italic">{streamingText}</span>
+                  <span className="inline-block w-1 h-4 bg-white/50 ml-1 animate-pulse" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Typing indicator */}
+          {isProcessing && (
+            <div className="flex justify-start">
+              <div className="flex gap-2">
+                <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center shrink-0 text-xs font-medium">
+                  AI
+                </div>
+                <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="flex justify-center">
+              <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-2 text-xs">
+                {error}
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Input Area */}
+      <div className="bg-white border-t border-gray-200 px-4 py-3 shrink-0">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-end gap-2 bg-gray-100 rounded-2xl px-3 py-2">
+            {/* Mic Button */}
             <button onClick={toggleMic} disabled={isProcessing}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shrink-0 ${
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 mb-0.5 ${
                 stage === "listening"
-                  ? "bg-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] scale-110 animate-pulse"
+                  ? "bg-red-500 text-white shadow-lg animate-pulse"
                   : isProcessing
-                    ? "bg-yellow-500/60"
-                    : "bg-gradient-to-br from-purple-500 to-teal-500 hover:scale-105 shadow-[0_0_20px_rgba(108,92,231,0.4)]"
+                    ? "bg-yellow-400 text-white"
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
               } disabled:opacity-50`}>
-              <span className="text-xl">{stage === "listening" ? "⏹" : isProcessing ? "⏳" : "🎤"}</span>
+              <span className="text-lg">{stage === "listening" ? "⏹" : isProcessing ? "⏳" : "🎤"}</span>
             </button>
-            <p className="text-xs text-gray-400">{stageLabel[stage]}</p>
-          </div>
 
-          {transcript && (
-            <div className="mt-3 bg-[#0A0A1A] border border-white/5 rounded-lg p-3 relative group">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] text-gray-500 uppercase">{language?.toUpperCase()} · {latency.stt}ms</p>
-                <button onClick={() => copyText(transcript)}
-                  className="text-[10px] text-gray-500 hover:text-white px-2 py-0.5 rounded bg-white/5 opacity-0 group-hover:opacity-100 transition">
-                  {copied ? "✓" : "📋 Copy"}
-                </button>
-              </div>
-              <p className="text-white text-sm select-all">{transcript}</p>
-            </div>
-          )}
+            {/* Text Input */}
+            <textarea ref={textareaRef} value={ttsText} onChange={(e) => setTtsText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={stage === "listening" ? "Listening..." : "Type a message or tap mic to speak..."}
+              rows={1}
+              className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none py-2 max-h-[150px]"
+              disabled={isProcessing} />
 
-          {/* Streaming transcript — live preview while still speaking */}
-          {!transcript && streamingTranscript && stage === "listening" && (
-            <div className="mt-3 bg-[#0A0A1A] border border-teal-500/20 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-                <p className="text-[10px] text-teal-400/70 uppercase tracking-wider">Live transcription</p>
-              </div>
-              <p className="text-teal-300/80 text-sm italic">{streamingTranscript}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Section 2: TTS — Text → Voice */}
-        <div className="w-full bg-[#151528] border border-white/10 rounded-xl p-5">
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">🔊 Text → Voice</p>
-          <div className="flex gap-2 mb-3">
-            <select value={ttsLanguage} onChange={(e) => setTtsLanguage(e.target.value)}
-              className="bg-[#0A0A1A] border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none shrink-0">
-              {voices.map((v) => (
-                <option key={v.code} value={v.code} className="bg-[#0A0A1A]">{v.name}</option>
-              ))}
-            </select>
-            <input type="text" value={ttsText} onChange={(e) => setTtsText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendTTS()}
-              placeholder="Type text to hear it spoken..."
-              className="flex-1 bg-[#0A0A1A] border border-white/5 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 outline-none focus:border-purple-500/50 transition" />
-            <button onClick={sendTTS} disabled={!ttsText.trim() || isProcessing}
-              className="bg-gradient-to-r from-purple-500 to-teal-500 hover:scale-105 disabled:opacity-40 transition-all px-4 py-2 rounded-lg text-sm font-medium shrink-0">
-              🔊 Play
+            {/* Send Button */}
+            <button onClick={sendTextMessage} disabled={!ttsText.trim() || isProcessing}
+              className="w-10 h-10 rounded-full bg-gray-800 text-white flex items-center justify-center shrink-0 mb-0.5 hover:bg-gray-700 transition disabled:opacity-30 disabled:hover:bg-gray-800">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
             </button>
           </div>
-          {latency.tts > 0 && (
-            <p className="text-[10px] text-gray-500">TTS: {latency.tts}ms · {latency.total}ms total</p>
-          )}
+          <p className="text-[10px] text-gray-400 text-center mt-2">
+            {stage === "listening" ? "🔴 Listening... tap mic to stop" : "Tap 🎤 to speak • Type to send text"}
+          </p>
         </div>
-
-        {/* Error */}
-        {error && (
-          <div className="px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-xs text-center w-full">
-            {error}
-          </div>
-        )}
       </div>
     </div>
   );
