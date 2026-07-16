@@ -114,7 +114,7 @@ async def transcribe_local(audio_bytes: bytes, language_override: str = None) ->
 
             # Urdu-aware prompt helps Whisper distinguish Urdu vs Hindi
             prompt_map = {
-                "ur": "یہ ایک آواز کا نظام ہے۔ صارف آپ سے اردو میں بات کر رہا ہے۔",
+                "ur": "یہ ایک آواز کا نظام ہے۔ صارف آپ سے اردو میں بات کر رہا ہے۔ اردو زبان میں جواب دیں۔ یہ اردو ہے۔",
                 "ar": "هذا نظام صوت. المستخدم يتحدث معك بالعربية.",
                 "hi": "यह एक आवाज़ प्रणाली है। उपयोगकर्ता हिंदी में बात कर रहा है।",
                 "tr": "Bu bir ses sistemidir. Kullanıcı sizinle Türkçe konuşuyor.",
@@ -169,7 +169,7 @@ def load_streaming_stt():
         print("[STT-STREAM] Model loaded.")
 
 STT_PROMPTS = {
-    "ur": "یہ ایک آواز کا نظام ہے۔ صارف آپ سے اردو میں بات کر رہا ہے۔",
+    "ur": "یہ ایک آواز کا نظام ہے۔ صارف آپ سے اردو میں بات کر رہا ہے۔ اردو زبان میں جواب دیں۔ یہ اردو ہے۔",
     "ar": "هذا نظام صوت. المستخدم يتحدث معك بالعربية.",
     "hi": "यह एक आवाज़ प्रणाली है। उपयोगकर्ता हिंदी में बात कर रहा है।",
     "tr": "Bu bir ses sistemidir. Kullanıcı sizinle Türkçe konuşuyor.",

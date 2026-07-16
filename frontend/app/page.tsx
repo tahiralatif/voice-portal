@@ -284,6 +284,7 @@ export default function Home() {
             ))}
           </select>
         </div>
+        <p className="text-[10px] text-gray-600 -mt-3">Urdu ke liye "Urdu" select karein — Auto-detect Hindi pick karta hai</p>
 
         {/* Section 1: STT — Speak → Text */}
         <div className="w-full bg-[#151528] border border-white/10 rounded-xl p-5">
